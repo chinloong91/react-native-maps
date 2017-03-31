@@ -34,6 +34,7 @@ public class AirMapManager extends ViewGroupManager<AirMapView> {
     private static final int FIT_TO_ELEMENTS = 3;
     private static final int FIT_TO_SUPPLIED_MARKERS = 4;
     private static final int FIT_TO_COORDINATES = 5;
+    private static final int ANIMATE_TO_REGION_WITH_ZOOM = 6;
 
     private final Map<String, Integer> MAP_TYPES = MapBuilder.of(
             "standard", GoogleMap.MAP_TYPE_NORMAL,
@@ -42,8 +43,6 @@ public class AirMapManager extends ViewGroupManager<AirMapView> {
             "terrain", GoogleMap.MAP_TYPE_TERRAIN,
             "none", GoogleMap.MAP_TYPE_NONE
     );
-
-    private ReactContext reactContext;
 
     private final ReactApplicationContext appContext;
 
@@ -61,24 +60,15 @@ public class AirMapManager extends ViewGroupManager<AirMapView> {
 
     @Override
     protected AirMapView createViewInstance(ThemedReactContext context) {
-        reactContext = context;
-
-        try {
-            MapsInitializer.initialize(this.appContext);
-        } catch (RuntimeException e) {
-            e.printStackTrace();
-            emitMapError("Map initialize error", "map_init_error");
-        }
-
-        return new AirMapView(context, this.appContext.getCurrentActivity(), this, this.googleMapOptions);
+        return new AirMapView(context, this, googleMapOptions);
     }
 
-    private void emitMapError(String message, String type) {
+    private void emitMapError(ThemedReactContext context, String message, String type) {
         WritableMap error = Arguments.createMap();
         error.putString("message", message);
         error.putString("type", type);
 
-        reactContext
+        context
                 .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
                 .emit("onError", error);
     }
@@ -86,11 +76,6 @@ public class AirMapManager extends ViewGroupManager<AirMapView> {
     @ReactProp(name = "region")
     public void setRegion(AirMapView view, ReadableMap region) {
         view.setRegion(region);
-    }
-
-    @ReactProp(name = "heading", defaultFloat = 0)
-    public void setHeading(AirMapView view, float heading) {
-        view.setHeading(heading);
     }
 
     @ReactProp(name = "mapType")
@@ -214,6 +199,20 @@ public class AirMapManager extends ViewGroupManager<AirMapView> {
                 view.animateToRegion(bounds, duration);
                 break;
 
+            case ANIMATE_TO_REGION_WITH_ZOOM:
+                region = args.getMap(0);
+                duration = args.getInt(1);
+                lng = region.getDouble("longitude");
+                lat = region.getDouble("latitude");
+                lngDelta = region.getDouble("longitudeDelta");
+                latDelta = region.getDouble("latitudeDelta");
+                LatLngBounds zoomBounds = new LatLngBounds(
+                        new LatLng(lat - latDelta / 2, lng - lngDelta / 2), // southwest
+                        new LatLng(lat + latDelta / 2, lng + lngDelta / 2)  // northeast
+                );
+                view.animateToRegionWithZoom(zoomBounds, duration, args.getMap(2));
+                break;
+
             case ANIMATE_TO_COORDINATE:
                 region = args.getMap(0);
                 duration = args.getInt(1);
@@ -266,7 +265,8 @@ public class AirMapManager extends ViewGroupManager<AirMapView> {
                 "animateToCoordinate", ANIMATE_TO_COORDINATE,
                 "fitToElements", FIT_TO_ELEMENTS,
                 "fitToSuppliedMarkers", FIT_TO_SUPPLIED_MARKERS,
-                "fitToCoordinates", FIT_TO_COORDINATES
+                "fitToCoordinates", FIT_TO_COORDINATES,
+                "animateToRegionWithZoom", ANIMATE_TO_REGION_WITH_ZOOM
         );
     }
 
@@ -302,9 +302,9 @@ public class AirMapManager extends ViewGroupManager<AirMapView> {
         view.updateExtraData(extraData);
     }
 
-    void pushEvent(View view, String name, WritableMap data) {
-        reactContext.getJSModule(RCTEventEmitter.class)
-                .receiveEvent(view.getId(), name, data);
+    void pushEvent(ThemedReactContext context, View view, String name, WritableMap data) {
+        context.getJSModule(RCTEventEmitter.class)
+            .receiveEvent(view.getId(), name, data);
     }
 
 }
